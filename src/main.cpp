@@ -16,6 +16,10 @@ LV_IMG_DECLARE(tabby_needle);
 LV_IMG_DECLARE(tabby_tick);
 LV_IMG_DECLARE(tabby_mini_paw_bg);
 
+#include "nissan_bold_32.h"
+#include "nissan_reg_24.h"
+#include "nissan_bold_96.h"
+
 QueueHandle_t canMsgQueue;
 #define CAN_QUEUE_LENGTH 32
 #define CAN_QUEUE_ITEM_SIZE sizeof(twai_message_t)
@@ -23,6 +27,7 @@ QueueHandle_t canMsgQueue;
 // DATA STORE
 typedef struct struct_gauge_data {
   int scale_value;
+  int speed_value; // 16-bit speed value from CAN (bytes E=high, F=low)
 }struct_gauge_data;
 
 struct_gauge_data GaugeData;
@@ -52,6 +57,8 @@ int scale_moving_average  = 0;
 lv_obj_t *main_scr;
 lv_obj_t *scale;
 lv_obj_t *needle_img;
+lv_obj_t *speed_label;
+lv_obj_t *speed_unit_label;
 
 void drivers_init(void) {
   i2c_init();
@@ -125,6 +132,14 @@ void update_scale(void) {
 // update parts with incoming values
 void update_values(void) {
   update_scale();
+
+  // Update numeric speed label from GaugeData
+  if (speed_label != NULL) {
+    char buf[16];
+    int speed = GaugeData.speed_value;
+    snprintf(buf, sizeof(buf), "%d", speed);
+    lv_label_set_text(speed_label, buf);
+  }
 }
 
 // mark the loader as complete
@@ -235,6 +250,23 @@ void main_scr_ui(void) {
 
   lv_obj_set_style_image_recolor_opa(needle_img, 255, 0);
   lv_obj_set_style_image_recolor(needle_img, lv_color_make(255,255,255), 0); // TO DO - replace with color from CAN 
+
+  // Speed numeric label: 20 pixels above center, using nissan_bold_32
+  speed_label = lv_label_create(main_scr);
+  lv_label_set_text(speed_label, "0");
+  lv_obj_set_style_text_font(speed_label, &nissan_bold_96, 0);
+  lv_obj_set_style_text_color(speed_label, lv_color_make(255,255,255), 0);
+  lv_obj_set_style_text_align(speed_label, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_style_text_opa(speed_label, 255, 0);
+  lv_obj_align(speed_label, LV_ALIGN_CENTER, 0, -20); // 20 pixels higher than center
+
+  // Unit label below the numeric speed, using nissan_reg_24
+  speed_unit_label = lv_label_create(main_scr);
+  lv_label_set_text(speed_unit_label, "km/h");
+  lv_obj_set_style_text_font(speed_unit_label, &nissan_reg_24, 0);
+  lv_obj_set_style_text_color(speed_unit_label, lv_color_make(255,255,255), 0);
+  lv_obj_set_style_text_opa(speed_unit_label, 255, 0);
+  lv_obj_align_to(speed_unit_label, speed_label, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);
 }
 
 // build the screens
@@ -256,6 +288,17 @@ void process_scale_value(uint8_t *byte_data) {
 
 
   GaugeData.scale_value = final_temp;
+}
+
+// process incoming speed value from PID 0x280
+void process_speed_value(uint8_t *byte_data) {
+  // Bytes: A B C D E F G H -> indices 0..7
+  // E is high byte (index 4), F is low byte (index 5)
+  uint16_t high = (uint16_t)byte_data[4];
+  uint16_t low = (uint16_t)byte_data[5];
+  uint16_t speed = (high << 8) | low;
+
+  GaugeData.speed_value = (int)speed; // store as int for UI usage
 }
 
 void receive_can_task(void *arg) {
@@ -281,6 +324,7 @@ void receive_can_task(void *arg) {
 void process_can_queue_task(void *arg) {
   twai_message_t message;
   int last_temp = GaugeData.scale_value;
+  int last_speed = GaugeData.speed_value;
   while (1) {
     if (xQueueReceive(canMsgQueue, &message, pdMS_TO_TICKS(1)) == pdPASS) {
       switch (message.identifier) {
@@ -289,6 +333,13 @@ void process_can_queue_task(void *arg) {
           if (GaugeData.scale_value != last_temp) {
             data_ready = true;
             last_temp = GaugeData.scale_value;
+          }
+          break;
+        case 0x280:
+          process_speed_value(message.data);
+          if (GaugeData.speed_value != last_speed) {
+            data_ready = true;
+            last_speed = GaugeData.speed_value;
           }
           break;
         default:
@@ -307,6 +358,16 @@ void setup(void) {
   set_backlight(80);
   screens_init();
   needle_sweep();
+  // Quick local test: when TESTING is true, simulate a 0x280 CAN payload
+  if (TESTING) {
+    uint8_t test_payload[8] = {0};
+    // Example speed: 123 km/h -> 0x007B (E=0x00, F=0x7B)
+    test_payload[4] = 0x00; // E (high)
+    test_payload[5] = 0x7B; // F (low)
+    process_speed_value(test_payload);
+    update_values();
+    Serial.printf("TEST: simulated speed %d km/h\n", GaugeData.speed_value);
+  }
   set_exio(EXIO_PIN4, Low);
   esp_reset_reason_t reason = esp_reset_reason();
   Serial.printf("Reset reason: %d\n", reason);
