@@ -19,6 +19,12 @@ LV_IMG_DECLARE(tabby_mini_paw_bg);
 #include "nissan_bold_32.h"
 #include "nissan_reg_24.h"
 #include "nissan_bold_96.h"
+#include "nissan_reg_192.h"
+#include "nissan_reg_128.h"
+#include "nissan_reg_160.h"
+#include "nissan_light_24.h"
+#include "nissan_light_32.h"
+#include "nissan_light_28.h"
 
 QueueHandle_t canMsgQueue;
 #define CAN_QUEUE_LENGTH 32
@@ -254,7 +260,7 @@ void main_scr_ui(void) {
   // Speed numeric label: 20 pixels above center, using nissan_bold_32
   speed_label = lv_label_create(main_scr);
   lv_label_set_text(speed_label, "0");
-  lv_obj_set_style_text_font(speed_label, &nissan_bold_96, 0);
+  lv_obj_set_style_text_font(speed_label, &nissan_reg_160, 0);
   lv_obj_set_style_text_color(speed_label, lv_color_make(255,255,255), 0);
   lv_obj_set_style_text_align(speed_label, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_opa(speed_label, 255, 0);
@@ -263,7 +269,7 @@ void main_scr_ui(void) {
   // Unit label below the numeric speed, using nissan_reg_24
   speed_unit_label = lv_label_create(main_scr);
   lv_label_set_text(speed_unit_label, "km/h");
-  lv_obj_set_style_text_font(speed_unit_label, &nissan_reg_24, 0);
+  lv_obj_set_style_text_font(speed_unit_label, &nissan_light_28, 0);
   lv_obj_set_style_text_color(speed_unit_label, lv_color_make(255,255,255), 0);
   lv_obj_set_style_text_opa(speed_unit_label, 255, 0);
   lv_obj_align_to(speed_unit_label, speed_label, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);
@@ -298,7 +304,7 @@ void process_speed_value(uint8_t *byte_data) {
   uint16_t low = (uint16_t)byte_data[5];
   uint16_t speed = (high << 8) | low;
 
-  GaugeData.speed_value = (int)speed; // store as int for UI usage
+  GaugeData.speed_value = (int)speed / 100; // store as int for UI usage, divide by 100 to convert from CAN value to km/h (Nissan specific)
 }
 
 void receive_can_task(void *arg) {
