@@ -307,6 +307,25 @@ void process_speed_value(uint8_t *byte_data) {
   GaugeData.speed_value = (int)speed / 100; // store as int for UI usage, divide by 100 to convert from CAN value to km/h (Nissan specific)
 }
 
+// process headlight status from PID 0x625
+// Byte B (index 1), bit 5 indicates if headlights are on
+// 0 = headlights off, 1 = headlights on
+void process_headlight_status(uint8_t *byte_data) {
+  // Extract bit 5 from byte B (index 1)
+  uint8_t byte_b = byte_data[1];
+  uint8_t headlight_bit = (byte_b >> 5) & 0x01;
+  
+  if (headlight_bit == 1) {
+    // Headlights are on - set backlight to 30
+    set_backlight(30);
+    Serial.println("Headlights ON - backlight set to 30");
+  } else {
+    // Headlights are off - set backlight to 80
+    set_backlight(80);
+    Serial.println("Headlights OFF - backlight set to 80");
+  }
+}
+
 void receive_can_task(void *arg) {
   while (1) {
     twai_message_t message;
@@ -347,6 +366,9 @@ void process_can_queue_task(void *arg) {
             data_ready = true;
             last_speed = GaugeData.speed_value;
           }
+          break;
+        case 0x625:
+          process_headlight_status(message.data);
           break;
         default:
           break;
